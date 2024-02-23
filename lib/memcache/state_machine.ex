@@ -1,6 +1,13 @@
 defmodule Memcache.StateMachine do
   alias Memcache.Connection
 
+  def single_command(machines, command) do
+    add(machines, :single_command, [command], fn
+      :single_command, [result] ->
+        result
+    end)
+  end
+
   # TODO: thundering herd mitigation
   def read_through(machines, key, opts \\ [], func) do
     ttl = Keyword.get(opts, :ttl, 0)

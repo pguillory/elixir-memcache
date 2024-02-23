@@ -13,4 +13,8 @@ defmodule Memcache.ConnectionPoolTest do
     assert is_pid(connection)
     assert Memcache.meta_noop(connection) == :ok
   end
+
+  test "using a pool in place of connection" do
+    assert Memcache.meta_noop(:test_pool) == :ok
+  end
 end
