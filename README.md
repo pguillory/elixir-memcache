@@ -76,12 +76,12 @@ as the ability to encode custom state machines.
 
 ### Read-Through Cache
 
-        ┌─────┐       ┌────────┐
-    ──► │ get │ ────► │ return │
-        └─────┘       └────────┘
-           │   ┌─────┐    ▲
-           └─► │ set │ ───┘
-               └─────┘
+        ┌─────┐   ok    ┌────────┐
+    ──► │ get │ ──────► │ return │
+        └─────┘         └────────┘
+           │     ┌─────┐    ▲
+           └───► │ set │ ───┘
+     not_found   └─────┘
 
 The original and probably most common way of using Memcache. We first try to
 look up a cached value with `get`. If found, we're done. Otherwise generate
@@ -94,15 +94,15 @@ write the value back with a `set`.
 
 ### Read-Modify-Write
 
-                     ┌─────┐
-           ┌───────► │ cas │ ────────┐
-           │         └─────┘         ▼
-        ┌──────┐ ◄──────┘        ┌────────┐
-    ──► │ gets │                 │ return │
-        └──────┘ ◄──────┐        └────────┘
-           │         ┌─────┐         ▲
-           └───────► │ add │ ────────┘
-                     └─────┘
+             ok       ┌─────┐      ok
+           ┌────────► │ cas │ ────────┐
+           │          └─────┘         ▼
+        ┌──────┐ ◄───────┘        ┌────────┐
+    ──► │ gets │   exists         │ return │
+        └──────┘ ◄───────┐        └────────┘
+           │          ┌─────┐         ▲
+           └────────► │ add │ ────────┘
+          not_found   └─────┘      ok
 
 In this case we're using Memcache as a (semi-)persistent datastore. We read a
 value, modify it, and write it back. The key is to use `cas` and `add`
@@ -119,11 +119,11 @@ again.
 
 ### Locking
 
-        ┌─────┐     ┌────────┐     ┌────────┐
-    ──► │ add │ ──► │ delete │ ──► │ return │
-        └─────┘     └────────┘     └────────┘
+        ┌─────┐  ok   ┌────────┐     ┌────────┐
+    ──► │ add │ ────► │ delete │ ──► │ return │
+        └─────┘       └────────┘     └────────┘
           ▲ │
-          └─┘
+          └─┘ exists
 
 Sometimes you need to ensure that only one process is doing something at a
 time. Write a key in Memcache to get a lock, then do the thing, then delete
