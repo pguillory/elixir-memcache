@@ -28,22 +28,22 @@ a large degree of concurrency. Typically we can execute a batch of commands
 in only slightly more time than a single command.
 
     # Sequential
-    |                |
-    | ---request1--> |
-    | <--response1-- |
-    |                |
-    | ---request2--> |
-    | <--response2-- |
-    |                |
+    │                │
+    │ ───request1──► │
+    │ ◄──response1── │
+    │                │
+    │ ───request2──► │
+    │ ◄──response2── │
+    │                │
 
     # Pipelined
-    |                |
-    | ---request1--> |
-    | ---request2--> |
-    |                |
-    | <--response1-- |
-    | <--response2-- |
-    |                |
+    │                │
+    │ ───request1──► │
+    │ ───request2──► │
+    │                │
+    │ ◄──response1── │
+    │ ◄──response2── │
+    │                │
 
 ## State Machines
 
