@@ -2,8 +2,13 @@ defmodule MemcacheTest do
   import Memcache
   use ExUnit.Case
 
+  setup_all do
+    {:ok, _server} = start_supervised({Memcache.Server, port: 11212})
+    :ok
+  end
+
   setup do
-    {:ok, memcache} = connect()
+    {:ok, memcache} = connect(port: 11212)
     :ok = flush_all(memcache)
     %{memcache: memcache}
   end
@@ -42,6 +47,17 @@ defmodule MemcacheTest do
   end
 
   test "append not_stored", %{memcache: memcache} do
+    assert append(memcache, "a", "1") == {:error, :not_stored}
+    assert get(memcache, "a") == {:error, :not_found}
+  end
+
+  test "prepend", %{memcache: memcache} do
+    assert set(memcache, "a", "1") == :ok
+    assert prepend(memcache, "a", "2") == :ok
+    assert get(memcache, "a") == {:ok, "21"}
+  end
+
+  test "prepend not_stored", %{memcache: memcache} do
     assert append(memcache, "a", "1") == {:error, :not_stored}
     assert get(memcache, "a") == {:error, :not_found}
   end
@@ -174,89 +190,91 @@ defmodule MemcacheTest do
     assert meta_set(memcache, "a", "1") == {:ok, %{}}
   end
 
-  test "meta_set return_cas", %{memcache: memcache} do
-    assert {:ok, %{cas: cas_unique}} = meta_set(memcache, "a", "1", return_cas: true)
-    assert gets(memcache, "a") == {:ok, "1", cas_unique}
-  end
+  describe "meta_set" do
+    test "return_cas", %{memcache: memcache} do
+      assert {:ok, %{cas: cas_unique}} = meta_set(memcache, "a", "1", return_cas: true)
+      assert gets(memcache, "a") == {:ok, "1", cas_unique}
+    end
 
-  test "meta_set compare_cas", %{memcache: memcache} do
-    assert {:ok, %{cas: cas_unique}} = meta_set(memcache, "a", "1", return_cas: true)
-    assert meta_set(memcache, "a", "2", compare_cas: cas_unique) == {:ok, %{}}
-  end
+    test "compare_cas", %{memcache: memcache} do
+      assert {:ok, %{cas: cas_unique}} = meta_set(memcache, "a", "1", return_cas: true)
+      assert meta_set(memcache, "a", "2", compare_cas: cas_unique) == {:ok, %{}}
+    end
 
-  test "meta_set compare_cas, exists", %{memcache: memcache} do
-    assert {:ok, %{cas: cas_unique}} = meta_set(memcache, "a", "1", return_cas: true)
-    cas_unique2 = different_cas_unique(cas_unique)
-    assert meta_set(memcache, "a", "2", compare_cas: cas_unique2) == {:error, :exists}
-  end
+    test "compare_cas, exists", %{memcache: memcache} do
+      assert {:ok, %{cas: cas_unique}} = meta_set(memcache, "a", "1", return_cas: true)
+      cas_unique2 = different_cas_unique(cas_unique)
+      assert meta_set(memcache, "a", "2", compare_cas: cas_unique2) == {:error, :exists}
+    end
 
-  test "meta_set set_flags", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", set_flags: 123) == {:ok, %{}}
-    assert meta_get(memcache, "a", return_flags: true) == {:ok, %{flags: 123}}
-  end
+    test "set_flags", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", set_flags: 123) == {:ok, %{}}
+      assert meta_get(memcache, "a", return_flags: true) == {:ok, %{flags: 123}}
+    end
 
-  # test "meta_set invalidate", %{memcache: memcache} do
-  #   assert meta_set(memcache, "a", "1", invalidate: true) == {:ok, %{}}
-  # end
+    # test "invalidate", %{memcache: memcache} do
+    #   assert meta_set(memcache, "a", "1", invalidate: true) == {:ok, %{}}
+    # end
 
-  test "meta_set return_key", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", return_key: true) == {:ok, %{key: "a"}}
-  end
+    test "return_key", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", return_key: true) == {:ok, %{key: "a"}}
+    end
 
-  test "meta_set opaque_token", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", opaque_token: "foo") == {:ok, %{opaque_token: "foo"}}
-  end
+    test "opaque_token", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", opaque_token: "foo") == {:ok, %{opaque_token: "foo"}}
+    end
 
-  test "meta_set return_size", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", return_size: true) == {:ok, %{size: 1}}
-  end
+    test "return_size", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", return_size: true) == {:ok, %{size: 1}}
+    end
 
-  test "meta_set set_ttl", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", set_ttl: 0) == {:ok, %{}}
-  end
+    test "set_ttl", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", set_ttl: 0) == {:ok, %{}}
+    end
 
-  test "meta_set add mode", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", mode: :add) == {:ok, %{}}
-  end
+    test "add mode", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", mode: :add) == {:ok, %{}}
+    end
 
-  test "meta_set add mode not_stored", %{memcache: memcache} do
-    :ok = set(memcache, "a", "1")
-    assert meta_set(memcache, "a", "1", mode: :add) == {:error, :not_stored}
-  end
+    test "add mode not_stored", %{memcache: memcache} do
+      :ok = set(memcache, "a", "1")
+      assert meta_set(memcache, "a", "1", mode: :add) == {:error, :not_stored}
+    end
 
-  test "meta_set replace mode", %{memcache: memcache} do
-    :ok = set(memcache, "a", "1")
-    assert meta_set(memcache, "a", "2", mode: :replace) == {:ok, %{}}
-    assert get(memcache, "a") == {:ok, "2"}
-  end
+    test "replace mode", %{memcache: memcache} do
+      :ok = set(memcache, "a", "1")
+      assert meta_set(memcache, "a", "2", mode: :replace) == {:ok, %{}}
+      assert get(memcache, "a") == {:ok, "2"}
+    end
 
-  test "meta_set replace mode not_stored", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", mode: :replace) == {:error, :not_stored}
-  end
+    test "replace mode not_stored", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", mode: :replace) == {:error, :not_stored}
+    end
 
-  test "meta_set append mode", %{memcache: memcache} do
-    :ok = set(memcache, "a", "1")
-    assert meta_set(memcache, "a", "2", mode: :append) == {:ok, %{}}
-    assert get(memcache, "a") == {:ok, "12"}
-  end
+    test "append mode", %{memcache: memcache} do
+      :ok = set(memcache, "a", "1")
+      assert meta_set(memcache, "a", "2", mode: :append) == {:ok, %{}}
+      assert get(memcache, "a") == {:ok, "12"}
+    end
 
-  test "meta_set append mode not_stored", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", mode: :append) == {:error, :not_stored}
-  end
+    test "append mode not_stored", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", mode: :append) == {:error, :not_stored}
+    end
 
-  test "meta_set prepend mode", %{memcache: memcache} do
-    :ok = set(memcache, "a", "1")
-    assert meta_set(memcache, "a", "2", mode: :prepend) == {:ok, %{}}
-    assert get(memcache, "a") == {:ok, "21"}
-  end
+    test "prepend mode", %{memcache: memcache} do
+      :ok = set(memcache, "a", "1")
+      assert meta_set(memcache, "a", "2", mode: :prepend) == {:ok, %{}}
+      assert get(memcache, "a") == {:ok, "21"}
+    end
 
-  test "meta_set prepend mode not_stored", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", mode: :prepend) == {:error, :not_stored}
-  end
+    test "prepend mode not_stored", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", mode: :prepend) == {:error, :not_stored}
+    end
 
-  test "meta_set set mode", %{memcache: memcache} do
-    assert meta_set(memcache, "a", "1", mode: :set) == {:ok, %{}}
-    assert get(memcache, "a") == {:ok, "1"}
+    test "set mode", %{memcache: memcache} do
+      assert meta_set(memcache, "a", "1", mode: :set) == {:ok, %{}}
+      assert get(memcache, "a") == {:ok, "1"}
+    end
   end
 
   test "meta_delete", %{memcache: memcache} do
