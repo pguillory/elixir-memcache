@@ -2,13 +2,20 @@ defmodule MemcacheTest do
   import Memcache
   use ExUnit.Case
 
+  def client_port do
+    case System.fetch_env("MEMCACHE_PORT") do
+      {:ok, port} -> String.to_integer(port)
+      :error -> 11212
+    end
+  end
+
   setup_all do
     {:ok, _server} = start_supervised({Memcache.Server, port: 11212})
     :ok
   end
 
   setup do
-    {:ok, memcache} = connect(port: 11212)
+    {:ok, memcache} = connect(port: client_port())
     :ok = flush_all(memcache)
     %{memcache: memcache}
   end
