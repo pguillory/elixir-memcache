@@ -3,7 +3,7 @@ defmodule Memcache.ConnectionPool do
   use Supervisor
 
   def start_link(opts \\ []) do
-    name = Keyword.get(opts, :name, __MODULE__)
+    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
     Supervisor.start_link(__MODULE__, opts, name: name)
   end
 
@@ -33,11 +33,11 @@ defmodule Memcache.ConnectionPool do
 
   @impl true
   def init(opts) do
-    connection_count = Keyword.get(opts, :connection_count, 8)
+    {connection_count, opts} = Keyword.pop(opts, :connection_count, 8)
 
     children =
       Enum.map(1..connection_count, fn id ->
-        Supervisor.child_spec(Connection, id: id)
+        Supervisor.child_spec({Connection, opts}, id: id)
       end)
 
     Supervisor.init(children, strategy: :one_for_one)

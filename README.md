@@ -134,6 +134,14 @@ the lock if no one else has it.
       function_that_only_one_process_should_call_at_a_time()
     end)
 
+## Server Implementation
+
+A native Elixir Memcached server implementation is included, so that you can
+run your application's unit tests without installing and starting a separate
+Memcached process.
+
+    {:ok, server} = Memcache.Server.start_link(port: 11212)
+
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
