@@ -9,11 +9,11 @@ defmodule Memcache.Server.Record do
     {flags, opts} = Keyword.pop_first(opts, :flags, underscore)
     {exptime, opts} = Keyword.pop_first(opts, :exptime, underscore)
     {cas_unique, opts} = Keyword.pop_first(opts, :cas_unique, underscore)
-    # {last_access, opts} = Keyword.pop_first(opts, :last_access, underscore)
+    {last_access, opts} = Keyword.pop_first(opts, :last_access, underscore)
     [] = opts
 
     quote do
-      {unquote(key), unquote(value), unquote(flags), unquote(exptime), unquote(cas_unique)}
+      {unquote(key), unquote(value), unquote(flags), unquote(exptime), unquote(cas_unique), unquote(last_access)}
     end
   end
 
@@ -24,7 +24,7 @@ defmodule Memcache.Server.Record do
       :flags -> 3
       :exptime -> 4
       :cas_unique -> 5
-      # :last_access -> 6
+      :last_access -> 6
     end
   end
 

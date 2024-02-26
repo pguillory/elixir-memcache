@@ -134,7 +134,7 @@ defmodule Memcache.Server do
   end
 
   def handle_call({:set, key, value, flags, exptime}, _, tab) do
-    true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique()))
+    true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique(), last_access: nil))
     {:reply, [["STORED"]], tab}
   end
 
@@ -143,7 +143,7 @@ defmodule Memcache.Server do
       [_] ->
         {:reply, [["NOT_STORED"]], tab}
       [] ->
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique()))
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique(), last_access: nil))
         # true = :ets.insert(tab, {key, value, flags, exptime, generate_cas_unique()})
         {:reply, [["STORED"]], tab}
     end
@@ -152,7 +152,7 @@ defmodule Memcache.Server do
   def handle_call({:replace, key, value, flags, exptime}, _, tab) do
     case :ets.lookup(tab, key) do
       [_] ->
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique()))
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique(), last_access: nil))
         # true = :ets.insert(tab, {key, value, flags, exptime, generate_cas_unique()})
         {:reply, [["STORED"]], tab}
       [] ->
@@ -162,9 +162,9 @@ defmodule Memcache.Server do
 
   def handle_call({:append, key, delta, _flags, _exptime}, _, tab) do
     case :ets.lookup(tab, key) do
-      [{^key, value, _flags, _exptime, _cas_unique}] ->
+      [Record.tuple(value: value)] ->
         value = value <> delta
-        true = :ets.update_element(tab, key, [{2, value}])
+        true = :ets.update_element(tab, key, Record.element_spec(value: value))
         {:reply, [["STORED"]], tab}
       [] ->
         {:reply, [["NOT_STORED"]], tab}
@@ -173,9 +173,9 @@ defmodule Memcache.Server do
 
   def handle_call({:prepend, key, delta, _flags, _exptime}, _, tab) do
     case :ets.lookup(tab, key) do
-      [{^key, value, _flags, _exptime, _cas_unique}] ->
+      [Record.tuple(value: value)] ->
         value = delta <> value
-        true = :ets.update_element(tab, key, [{2, value}])
+        true = :ets.update_element(tab, key, Record.element_spec(value: value))
         {:reply, [["STORED"]], tab}
       [] ->
         {:reply, [["NOT_STORED"]], tab}
@@ -184,11 +184,11 @@ defmodule Memcache.Server do
 
   def handle_call({:cas, key, value, cas_unique, flags, exptime}, _, tab) do
     case :ets.lookup(tab, key) do
-      [{^key, _value, _flags, _exptime, ^cas_unique}] ->
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique()))
+      [Record.tuple(cas_unique: ^cas_unique)] ->
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: generate_cas_unique(), last_access: nil))
         # true = :ets.insert(tab, {key, value, flags, exptime, generate_cas_unique()})
         {:reply, [["STORED"]], tab}
-      [{^key, _value, _flags, _exptime, _different_cas_unique}] ->
+      [Record.tuple()] ->
         {:reply, [["EXISTS"]], tab}
       [] ->
         {:reply, [["NOT_FOUND"]], tab}
@@ -198,7 +198,9 @@ defmodule Memcache.Server do
 
   def handle_call({:get, key}, _, tab) do
     case :ets.lookup(tab, key) do
-      [{^key, value, flags, _exptime, _cas_unique}] ->
+      [Record.tuple(value: value, flags: flags)] ->
+        new_last_access = System.os_time(:second)
+        true = :ets.update_element(tab, key, Record.element_spec(last_access: new_last_access))
         {:reply, [["VALUE", key, flags, byte_size(value)], [value], ["END"]], tab}
       [] ->
         {:reply, [["END"]], tab}
@@ -207,7 +209,9 @@ defmodule Memcache.Server do
 
   def handle_call({:gets, key}, _, tab) do
     case :ets.lookup(tab, key) do
-      [{^key, value, flags, _exptime, cas_unique}] ->
+      [Record.tuple(value: value, flags: flags, cas_unique: cas_unique)] ->
+        new_last_access = System.os_time(:second)
+        true = :ets.update_element(tab, key, Record.element_spec(last_access: new_last_access))
         {:reply, [["VALUE", key, flags, byte_size(value), cas_unique], [value], ["END"]], tab}
       [] ->
         {:reply, [["END"]], tab}
@@ -287,11 +291,13 @@ defmodule Memcache.Server do
 
   def handle_call({:mg, key, opts}, _, tab) do
     case :ets.lookup(tab, key) do
-      [Record.tuple(value: value, flags: flags, exptime: exptime, cas_unique: cas_unique)] ->
+      [Record.tuple(value: value, flags: flags, exptime: exptime, cas_unique: cas_unique, last_access: last_access)] ->
+        new_last_access = System.os_time(:second)
+        true = :ets.update_element(tab, key, Record.element_spec(last_access: new_last_access))
         if "v" in opts do
-          {:reply, [["VA", byte_size(value) | encode_flag_results(opts, key, value, flags, exptime, cas_unique)], [value]], tab}
+          {:reply, [["VA", byte_size(value) | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)], [value]], tab}
         else
-          {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+          {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
         end
       [] ->
         {:reply, [["EN"]], tab}
@@ -320,36 +326,43 @@ defmodule Memcache.Server do
     case :ets.lookup(tab, key) do
       [Record.tuple(cas_unique: different_cas_unique)] when cas_unique != nil and cas_unique != different_cas_unique ->
         cas_unique = 0
-        {:reply, [["EX" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        {:reply, [["EX" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
 
       [] when cas_unique != nil ->
         cas_unique = 0
-        {:reply, [["NF" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        {:reply, [["NF" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
 
       [] when mode in [:append, :prepend, :replace] ->
         cas_unique = 0
-        {:reply, [["NS" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        {:reply, [["NS" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
 
       [_] when mode == :add ->
         cas_unique = 0
-        {:reply, [["NS" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        {:reply, [["NS" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
 
       [Record.tuple(value: old_value)] when mode == :append ->
         value = old_value <> value
         cas_unique = generate_cas_unique()
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique))
-        {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique, last_access: last_access))
+        {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
 
       [Record.tuple(value: old_value)] when mode == :prepend ->
         value = value <> old_value
         cas_unique = generate_cas_unique()
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique))
-        {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique, last_access: last_access))
+        {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
 
       _ ->
         cas_unique = generate_cas_unique()
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique))
-        {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique)]], tab}
+        last_access = nil
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique, last_access: last_access))
+        {:reply, [["HD" | encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access)]], tab}
     end
   end
 
@@ -362,11 +375,11 @@ defmodule Memcache.Server do
 
     case :ets.lookup(tab, key) do
       [Record.tuple(cas_unique: different_cas_unique)] when cas_unique != nil and cas_unique != different_cas_unique ->
-        {:reply, [["EX" | encode_flag_results(opts, key, nil, nil, nil, nil)]], tab}
+        {:reply, [["EX" | encode_flag_results(opts, key, nil, nil, nil, nil, nil)]], tab}
 
       [_] ->
         true = :ets.delete(tab, key)
-        {:reply, [["HD" | encode_flag_results(opts, key, nil, nil, nil, nil)]], tab}
+        {:reply, [["HD" | encode_flag_results(opts, key, nil, nil, nil, nil, nil)]], tab}
 
       [] ->
         {:reply, [["NF"]], tab}
@@ -413,7 +426,7 @@ defmodule Memcache.Server do
 
     case :ets.lookup(tab, key) do
       [Record.tuple(cas_unique: different_cas_unique)] when cas_unique != nil and cas_unique != different_cas_unique ->
-        {:reply, [["EX" | encode_flag_results(opts, key, nil, nil, nil, nil)]], tab}
+        {:reply, [["EX" | encode_flag_results(opts, key, nil, nil, nil, nil, nil)]], tab}
 
       [Record.tuple(value: value, exptime: exptime)] ->
         value =
@@ -423,12 +436,13 @@ defmodule Memcache.Server do
           end
 
         cas_unique = generate_cas_unique()
+        last_access = nil
         true = :ets.update_element(tab, key, Record.element_spec(value: value, cas_unique: cas_unique))
 
         if "v" in opts do
-          {:reply, [["VA", byte_size(value) | encode_flag_results(opts, key, value, nil, exptime, cas_unique)], [value]], tab}
+          {:reply, [["VA", byte_size(value) | encode_flag_results(opts, key, value, nil, exptime, cas_unique, last_access)], [value]], tab}
         else
-          {:reply, [["HD" | encode_flag_results(opts, key, value, nil, exptime, cas_unique)]], tab}
+          {:reply, [["HD" | encode_flag_results(opts, key, value, nil, exptime, cas_unique, last_access)]], tab}
         end
 
       [] when initial_ttl != nil ->
@@ -436,12 +450,13 @@ defmodule Memcache.Server do
         flags = 0
         exptime = initial_ttl
         cas_unique = generate_cas_unique()
-        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique))
+        last_access = nil
+        true = :ets.insert(tab, Record.tuple(key: key, value: value, flags: flags, exptime: exptime, cas_unique: cas_unique, last_access: nil))
 
         if "v" in opts do
-          {:reply, [["VA", byte_size(value) | encode_flag_results(opts, key, value, nil, exptime, cas_unique)], [value]], tab}
+          {:reply, [["VA", byte_size(value) | encode_flag_results(opts, key, value, nil, exptime, cas_unique, last_access)], [value]], tab}
         else
-          {:reply, [["HD" | encode_flag_results(opts, key, value, nil, exptime, cas_unique)]], tab}
+          {:reply, [["HD" | encode_flag_results(opts, key, value, nil, exptime, cas_unique, last_access)]], tab}
         end
 
       [] ->
@@ -480,12 +495,13 @@ defmodule Memcache.Server do
   end
 
 
-  defp encode_flag_results(opts, key, value, flags, exptime, cas_unique) do
+  defp encode_flag_results(opts, key, value, flags, exptime, cas_unique, last_access) do
     Enum.flat_map(opts, fn
       "c" when cas_unique != nil -> ["c#{cas_unique}"]
       "f" when flags != nil -> ["f#{flags}"]
+      "h" -> case last_access do nil -> ["h0"]; _ -> ["h1"] end
       "k" when key != nil -> ["k#{key}"]
-      # "l" -> ["l#{last_access}"]
+      "l" when last_access != nil -> ["l#{last_access}"]
       "O" <> token -> ["O" <> token]
       "s" when value != nil -> ["s#{byte_size(value)}"]
       "t" when exptime != nil -> ["t#{exptime}"]
