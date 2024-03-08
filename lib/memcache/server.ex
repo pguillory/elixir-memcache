@@ -23,10 +23,16 @@ defmodule Memcache.Server do
   defp accept_connections(listen_socket, server) do
     {:ok, socket} = :gen_tcp.accept(listen_socket)
 
-    spawn(fn ->
-      :gen_tcp.controlling_process(socket, self())
-      handle_requests(socket, server)
-    end)
+    pid =
+      spawn_link(fn ->
+        receive do
+          {:unlink, parent} -> Process.unlink(parent)
+        end
+        handle_requests(socket, server)
+      end)
+
+    :ok = :gen_tcp.controlling_process(socket, pid)
+    send(pid, {:unlink, self()})
 
     accept_connections(listen_socket, server)
   end
