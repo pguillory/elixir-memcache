@@ -26,6 +26,13 @@ defmodule Memcache.StateMachineTest do
     assert Memcache.get(memcache, "a") == {:ok, "1"}
   end
 
+  test "read_through_term", %{memcache: memcache} do
+    assert Memcache.get(memcache, "a") == {:error, :not_found}
+    assert read_through_term(memcache, "a", fn -> 123 end) == {:ok, 123}
+    assert Memcache.get(memcache, "a") !== {:error, :not_found}
+    assert read_through_term(memcache, "a", fn -> 123 end) == {:ok, 123}
+  end
+
   test "read_modify_write", %{memcache: memcache} do
     func = fn
       {:error, :not_found} -> "1"

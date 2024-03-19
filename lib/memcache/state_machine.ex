@@ -36,6 +36,33 @@ defmodule Memcache.StateMachine do
     end)
   end
 
+  def read_through_term(machines, key, opts \\ [], func) do
+    ttl = Keyword.get(opts, :ttl, 0)
+
+    add(machines, :get, Memcache.get([], key), fn
+      :get, [{:ok, value}] ->
+        # Cache hit.
+        {{:ok, :erlang.binary_to_term(value)}, []}
+
+      :get, [error: :not_found] ->
+        # Cache miss.
+        value = func.()
+        {{:set, value}, Memcache.set([], key, :erlang.term_to_binary(value), ttl)}
+
+      :get, [error: _error] ->
+        # Some problem trying to get cached value. Memcache unavailable? Don't bother trying to set.
+        value = func.()
+        {{:ok, value}, []}
+
+      {:set, value}, [:ok] ->
+        {{:ok, value}, []}
+
+      {:set, value}, [error: _error] ->
+        # Failed to set value after a cache miss. Don't bother trying again. Just return the value we have.
+        {{:ok, value}, []}
+    end)
+  end
+
   def read_modify_write(machines, key, opts \\ [], func) do
     ttl = Keyword.get(opts, :ttl, 0)
 
