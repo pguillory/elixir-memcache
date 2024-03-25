@@ -10,9 +10,9 @@ defmodule Memcache.StateMachineTest do
 
   test "running state machines", %{memcache: memcache} do
     assert new()
-           |> add(:mn, Memcache.meta_noop([]), fn :mn, [:ok] -> {:result1, []} end)
-           |> add(:mn, Memcache.meta_noop([]), fn :mn, [:ok] -> {:result2, []} end)
-           |> add(:mn, Memcache.meta_noop([]), fn :mn, [:ok] -> {:result3, []} end)
+           |> add(:mn1, Memcache.meta_noop([]), fn :mn1, [:ok] -> {:result1, []} end)
+           |> add(:mn2, Memcache.meta_noop([]), fn :mn2, [:ok] -> {:result2, []} end)
+           |> add(:mn3, Memcache.meta_noop([]), fn :mn3, [:ok] -> {:result3, []} end)
            |> run(memcache) == [
              :result1,
              :result2,

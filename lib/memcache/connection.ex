@@ -1,5 +1,4 @@
 defmodule Memcache.Connection do
-  alias Memcache.CommandBatch
   use GenServer
 
   def start_link(opts \\ []) do
@@ -8,7 +7,6 @@ defmodule Memcache.Connection do
 
   def execute(connection, batch) when is_pid(connection) and is_list(batch) do
     batch
-    |> CommandBatch.to_list()
     |> Enum.chunk_every(20)
     |> Enum.map(fn batch ->
       GenServer.call(connection, {:execute, batch})

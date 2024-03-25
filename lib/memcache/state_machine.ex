@@ -1,10 +1,11 @@
 defmodule Memcache.StateMachine do
+  alias Memcache.CommandBatch
   alias Memcache.Connection
 
   def single_command(machines, command) do
     add(machines, :single_command, [command], fn
       :single_command, [result] ->
-        result
+        {result, []}
     end)
   end
 
@@ -145,7 +146,7 @@ defmodule Memcache.StateMachine do
   defp run2(machines, connection) do
     machines
     |> Enum.map(fn {_state, batch, _func} ->
-      batch
+      CommandBatch.to_list(batch)
     end)
     |> flattened(fn
       [_ | _] = flattened_batch ->

@@ -100,7 +100,7 @@ defmodule Memcache do
   end
 
   defp command(connection, command) when is_pid(connection) do
-    batch = CommandBatch.new() |> CommandBatch.add(command)
+    batch = CommandBatch.new() |> CommandBatch.add(command) |> CommandBatch.to_list()
 
     case Connection.execute(connection, batch) do
       [result] -> result
@@ -121,6 +121,7 @@ defmodule Memcache do
   end
 
   def execute(batch, connection) do
+    batch = CommandBatch.to_list(batch)
     Connection.execute(connection, batch)
   end
 end
