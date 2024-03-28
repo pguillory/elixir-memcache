@@ -138,7 +138,7 @@ defmodule Memcache.StateMachine do
     [machine | machines]
   end
 
-  def run(machines, connection) when is_pid(connection) do
+  def run(machines, connection) do
     Enum.reverse(machines)
     |> run2(connection)
   end
