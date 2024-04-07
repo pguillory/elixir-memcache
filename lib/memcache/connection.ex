@@ -5,6 +5,10 @@ defmodule Memcache.Connection do
     GenServer.start_link(__MODULE__, opts, opts)
   end
 
+  def start(opts \\ []) do
+    GenServer.start(__MODULE__, opts, opts)
+  end
+
   def execute(connection, batch) when is_list(batch) do
     batch
     |> Enum.chunk_every(20)
