@@ -5,7 +5,7 @@ defmodule Memcache.MixProject do
     [
       package: package(),
       app: :memcached,
-      version: "0.1.2",
+      version: "0.2.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
