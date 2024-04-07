@@ -8,6 +8,7 @@ defmodule Memcache.Router do
 
   def init(opts) do
     hosts = Keyword.fetch!(opts, :hosts)
+    true = is_list(hosts)
     :ets.new(__MODULE__, [:named_table])
 
     Enum.each(hosts, fn host_and_port ->

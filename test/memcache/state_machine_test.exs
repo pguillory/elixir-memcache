@@ -1,60 +1,76 @@
 defmodule Memcache.StateMachineTest do
+  alias Memcache.Command
   import Memcache.StateMachine
   use ExUnit.Case
 
-  setup do
-    {:ok, memcache} = Memcache.connect()
-    :ok = Memcache.flush_all(memcache)
-    %{memcache: memcache}
+  def client_port do
+    case System.fetch_env("MEMCACHE_PORT") do
+      {:ok, port} ->
+        String.to_integer(port)
+
+      :error ->
+        {:ok, _server} = start_supervised({Memcache.Server, port: 11212})
+        11212
+    end
   end
 
-  test "running state machines", %{memcache: memcache} do
-    assert new()
-           |> add(:mn1, Memcache.meta_noop([]), fn :mn1, [:ok] -> {:result1, []} end)
-           |> add(:mn2, Memcache.meta_noop([]), fn :mn2, [:ok] -> {:result2, []} end)
-           |> add(:mn3, Memcache.meta_noop([]), fn :mn3, [:ok] -> {:result3, []} end)
-           |> run(memcache) == [
+  setup_all do
+    {:ok, _} = start_supervised({Memcache, hosts: ["localhost:#{client_port()}"]})
+    :ok
+  end
+
+  setup do
+    :ok = Memcache.flush_all()
+  end
+
+  test "running state machines" do
+    assert [
+             machine(:mn1, [Command.meta_noop()], fn :mn1, [:ok] -> {:result1, []} end),
+             machine(:mn2, [Command.meta_noop()], fn :mn2, [:ok] -> {:result2, []} end),
+             machine(:mn3, [Command.meta_noop()], fn :mn3, [:ok] -> {:result3, []} end)
+           ]
+           |> run() == [
              :result1,
              :result2,
              :result3
            ]
   end
 
-  test "read_through", %{memcache: memcache} do
-    assert Memcache.get(memcache, "a") == {:error, :not_found}
-    assert read_through(memcache, "a", fn -> "1" end) == {:ok, "1"}
-    assert Memcache.get(memcache, "a") == {:ok, "1"}
+  test "read_through" do
+    assert Memcache.get("a") == {:error, :not_found}
+    assert read_through("a", fn -> "1" end) |> run() == {:ok, "1"}
+    assert Memcache.get("a") == {:ok, "1"}
   end
 
-  test "read_through_term", %{memcache: memcache} do
-    assert Memcache.get(memcache, "a") == {:error, :not_found}
-    assert read_through_term(memcache, "a", fn -> 123 end) == {:ok, 123}
-    assert Memcache.get(memcache, "a") !== {:error, :not_found}
-    assert read_through_term(memcache, "a", fn -> 123 end) == {:ok, 123}
+  test "read_through_term" do
+    assert Memcache.get("a") == {:error, :not_found}
+    assert read_through_term("a", fn -> 123 end) |> run() == {:ok, 123}
+    assert Memcache.get("a") !== {:error, :not_found}
+    assert read_through_term("a", fn -> 123 end) |> run() == {:ok, 123}
   end
 
-  test "read_modify_write", %{memcache: memcache} do
+  test "read_modify_write" do
     func = fn
       {:error, :not_found} -> "1"
       {:ok, value} -> value <> "2"
     end
 
-    assert Memcache.get(memcache, "a") == {:error, :not_found}
-    assert read_modify_write(memcache, "a", func) == {:ok, "1"}
-    assert Memcache.get(memcache, "a") == {:ok, "1"}
-    assert read_modify_write(memcache, "a", func) == {:ok, "12"}
-    assert Memcache.get(memcache, "a") == {:ok, "12"}
+    assert Memcache.get("a") == {:error, :not_found}
+    assert read_modify_write("a", func) |> run() == {:ok, "1"}
+    assert Memcache.get("a") == {:ok, "1"}
+    assert read_modify_write("a", func) |> run() == {:ok, "12"}
+    assert Memcache.get("a") == {:ok, "12"}
   end
 
-  test "with_lock", %{memcache: memcache} do
-    assert Memcache.get(memcache, "a") == {:error, :not_found}
-    assert with_lock(memcache, "a", fn -> :success end) == {:ok, :success}
-    assert Memcache.get(memcache, "a") == {:error, :not_found}
+  test "with_lock" do
+    assert Memcache.get("a") == {:error, :not_found}
+    assert with_lock("a", fn -> :success end) |> run() == {:ok, :success}
+    assert Memcache.get("a") == {:error, :not_found}
   end
 
-  test "with_lock busy", %{memcache: memcache} do
-    :ok = Memcache.set(memcache, "a", "locked")
-    assert with_lock(memcache, "a", fn -> :success end) == {:error, :busy}
+  test "with_lock busy" do
+    :ok = Memcache.set("a", "locked")
+    assert with_lock("a", fn -> :success end) |> run() == {:error, :busy}
   end
 
   test "flatten" do

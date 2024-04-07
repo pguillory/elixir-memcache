@@ -1,4 +1,5 @@
 defmodule Memcache.RouterTest do
+  alias Memcache.Command
   import Eventually
   import Memcache.Router
   use ExUnit.Case
@@ -6,7 +7,7 @@ defmodule Memcache.RouterTest do
   test "set" do
     {:ok, _server} = start_supervised({Memcache.Server, port: 11212})
     {:ok, _router} = start_supervised({Memcache.Router, hosts: ["127.0.0.1:11212"]})
-    commands = Memcache.set([], "key", "value")
+    commands = [Command.set("key", "value")]
     results = execute(commands)
     assert results == [:ok]
   end

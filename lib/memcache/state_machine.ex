@@ -1,19 +1,18 @@
 defmodule Memcache.StateMachine do
-  alias Memcache.CommandBatch
-  alias Memcache.Connection
+  import Memcache.Command
 
-  def single_command(machines, command) do
-    add(machines, :single_command, [command], fn
+  def single_command(command) do
+    machine(:single_command, [command], fn
       :single_command, [result] ->
         {result, []}
     end)
   end
 
   # TODO: thundering herd mitigation
-  def read_through(machines, key, opts \\ [], func) do
+  def read_through(key, opts \\ [], func) do
     ttl = Keyword.get(opts, :ttl, 0)
 
-    add(machines, :get, Memcache.get([], key), fn
+    machine(:get, [get(key)], fn
       :get, [{:ok, value}] ->
         # Cache hit.
         {{:ok, value}, []}
@@ -21,7 +20,7 @@ defmodule Memcache.StateMachine do
       :get, [error: :not_found] ->
         # Cache miss.
         value = func.()
-        {{:set, value}, Memcache.set([], key, value, ttl)}
+        {{:set, value}, [set(key, value, ttl)]}
 
       :get, [error: _error] ->
         # Some problem trying to get cached value. Memcache unavailable? Don't bother trying to set.
@@ -37,10 +36,10 @@ defmodule Memcache.StateMachine do
     end)
   end
 
-  def read_through_term(machines, key, opts \\ [], func) do
+  def read_through_term(key, opts \\ [], func) do
     ttl = Keyword.get(opts, :ttl, 0)
 
-    add(machines, :get, Memcache.get([], key), fn
+    machine(:get, [get(key)], fn
       :get, [{:ok, value}] ->
         # Cache hit.
         {{:ok, :erlang.binary_to_term(value)}, []}
@@ -48,7 +47,7 @@ defmodule Memcache.StateMachine do
       :get, [error: :not_found] ->
         # Cache miss.
         value = func.()
-        {{:set, value}, Memcache.set([], key, :erlang.term_to_binary(value), ttl)}
+        {{:set, value}, [set(key, :erlang.term_to_binary(value), ttl)]}
 
       :get, [error: _error] ->
         # Some problem trying to get cached value. Memcache unavailable? Don't bother trying to set.
@@ -64,49 +63,49 @@ defmodule Memcache.StateMachine do
     end)
   end
 
-  def read_modify_write(machines, key, opts \\ [], func) do
+  def read_modify_write(key, opts \\ [], func) do
     ttl = Keyword.get(opts, :ttl, 0)
 
-    add(machines, :gets, Memcache.gets([], key), fn
+    machine(:gets, [gets(key)], fn
       :gets, [{:ok, old_value, cas_unique}] ->
         new_value = func.({:ok, old_value})
-        {{:cas, new_value}, Memcache.cas([], key, new_value, cas_unique, ttl)}
+        {{:cas, new_value}, [cas(key, new_value, cas_unique, ttl)]}
 
       :gets, [error: :not_found] ->
         new_value = func.({:error, :not_found})
-        {{:add, new_value}, Memcache.add([], key, new_value, ttl)}
+        {{:add, new_value}, [add(key, new_value, ttl)]}
 
       {:cas, new_value}, [:ok] ->
         {{:ok, new_value}, []}
 
       {:cas, _new_value}, [error: :exists] ->
         # Race condition, the key changed after we read it. Try again.
-        {:gets, Memcache.gets([], key)}
+        {:gets, [gets(key)]}
 
       {:cas, _new_value}, [error: :not_found] ->
         # Race condition, the key expired after we read it. Try again.
         new_value = func.({:error, :not_found})
-        {:add, Memcache.add([], key, new_value, ttl)}
+        {:add, [add(key, new_value, ttl)]}
 
       {:add, new_value}, [:ok] ->
         {{:ok, new_value}, []}
 
       {:add, _new_value}, [error: :not_stored] ->
         # Race condition, the key was created after we read it. Try again.
-        {:gets, Memcache.gets([], key)}
+        {:gets, [gets(key)]}
 
       _, {:error, error} ->
         {{:error, error}, []}
     end)
   end
 
-  def with_lock(machines, key, opts \\ [], func) do
+  def with_lock(key, opts \\ [], func) do
     ttl = Keyword.get(opts, :ttl, 0)
 
-    add(machines, :add, Memcache.add([], key, "locked", ttl), fn
+    machine(:add, [add(key, "locked", ttl)], fn
       :add, [:ok] ->
         value = func.()
-        {{:delete, value}, Memcache.delete([], key)}
+        {{:delete, value}, [delete(key)]}
 
       :add, [error: :not_stored] ->
         # TODO: retry
@@ -120,37 +119,27 @@ defmodule Memcache.StateMachine do
     end)
   end
 
-  def new do
-    []
+  def machine(initial_state, commands, func) when is_list(commands) and is_function(func, 2) do
+    {initial_state, commands, func}
   end
 
-  def add(connection, state, batch, func) when is_pid(connection) do
-    new()
-    |> add(state, batch, func)
-    |> run(connection)
-    |> case do
-      [result] -> result
-    end
+  def run(machines) do
+    run(machines, Memcache.Router)
   end
 
-  def add(machines, state, batch, func) when is_list(machines) do
-    machine = {state, batch, func}
-    [machine | machines]
+  def run(machine, connection) when is_tuple(machine) do
+    [result] = run([machine], connection)
+    result
   end
 
-  def run(machines, connection) do
-    Enum.reverse(machines)
-    |> run2(connection)
-  end
-
-  defp run2(machines, connection) do
+  def run(machines, connection) when is_list(machines) do
     machines
-    |> Enum.map(fn {_state, batch, _func} ->
-      CommandBatch.to_list(batch)
+    |> Enum.map(fn {_state, commands, _func} ->
+      commands
     end)
     |> flattened(fn
-      [_ | _] = flattened_batch ->
-        Connection.execute(connection, flattened_batch)
+      [_ | _] = flattened_commands ->
+        Memcache.execute(flattened_commands, connection)
 
       [] ->
         throw(:all_machines_stopped)
@@ -163,7 +152,7 @@ defmodule Memcache.StateMachine do
       [], {_, [], _} = stopped_machine ->
         stopped_machine
     end)
-    |> run2(connection)
+    |> run(connection)
   catch
     :all_machines_stopped ->
       # All machines are stopped.
