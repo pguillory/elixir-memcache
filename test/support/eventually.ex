@@ -1,12 +1,10 @@
 defmodule Eventually do
   defmacro eventually(condition, timeout \\ 5000) when is_integer(timeout) do
     quote do
-      timeout = unquote(timeout)
-      start_time = System.monotonic_time(:millisecond)
-      deadline = start_time + timeout
+      deadline = System.monotonic_time(:millisecond) + unquote(timeout)
 
       Stream.iterate(0, &(&1 + 1))
-      |> Enum.reduce_while(nil, fn delay, nil ->
+      |> Enum.reduce_while(nil, fn delay, _ ->
         if unquote(condition) do
           {:halt, nil}
         else
