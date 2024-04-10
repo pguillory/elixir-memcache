@@ -2,9 +2,11 @@
 
 Memcache client for Elixir with support for pipelining.
 
-    {:ok, memcache} = Memcache.connect()
-    :ok = Memcache.set(memcache, "key", "value")
-    {:ok, "value"} = Memcache.get(memcache, "key")
+```elixir
+{:ok, memcache} = Memcache.connect()
+:ok = Memcache.set(memcache, "key", "value")
+{:ok, "value"} = Memcache.get(memcache, "key")
+```
 
 ## Pipelined Execution
 
@@ -12,14 +14,18 @@ All commands (get, set, etc.) can be executed both individually or as part of
 a batch of commands. In other words, these are equivalent in terms of
 behavior:
 
-    :ok = Memcache.set(memcache, "key1", "value1")
-    :ok = Memcache.set(memcache, "key2", "value2")
+```elixir
+:ok = Memcache.set(memcache, "key1", "value1")
+:ok = Memcache.set(memcache, "key2", "value2")
+```
 
-    [:ok, :ok] =
-      Memcache.batch()
-      |> Memcache.set("key1", "value1")
-      |> Memcache.set("key2", "value2")
-      |> Memcache.execute(memcache)
+```elixir
+[:ok, :ok] =
+  Memcache.batch()
+  |> Memcache.set("key1", "value1")
+  |> Memcache.set("key2", "value2")
+  |> Memcache.execute(memcache)
+```
 
 However, note that they are *not* equivalent in terms of performance. The
 batched commands are executed using pipelining: the requests for all commands
@@ -68,11 +74,13 @@ is encoded as a state machine, then many instances of these state machines
 can be run simultaneously. It includes some examples (described below) as well
 as the ability to encode custom state machines.
 
-    Memcache.StateMachine.new()
-    |> Memcache.StateMachine.read_through(cache_key, fn ->
-      MyDatabase.expensive_call()
-    end)
-    |> Memcache.StateMachine.execute(memcache)
+```elixir
+Memcache.StateMachine.new()
+|> Memcache.StateMachine.read_through(cache_key, fn ->
+  MyDatabase.expensive_call()
+end)
+|> Memcache.StateMachine.execute(memcache)
+```
 
 ### Read-Through Cache
 
@@ -88,9 +96,11 @@ look up a cached value with `get`. If found, we're done. Otherwise generate
 the value (perhaps with an expensive database call or computation), then
 write the value back with a `set`.
 
-    Memcache.StateMachine.read_through(memcache, cache_key, fn ->
-      MyDatabase.expensive_call()
-    end)
+```elixir
+Memcache.StateMachine.read_through(memcache, cache_key, fn ->
+  MyDatabase.expensive_call()
+end)
+```
 
 ### Read-Modify-Write
 
@@ -112,10 +122,12 @@ Whichever `cas` goes second will detect that the modification from the first
 and return an error, which indicates we should start over and get the value
 again.
 
-    Memcache.StateMachine.read_modify_write(memcache, cache_key, fn
-      {:error, :not_found} -> "initial value"
-      {:ok, old_value} -> old_value <> "new value"
-    end)
+```elixir
+Memcache.StateMachine.read_modify_write(memcache, cache_key, fn
+  {:error, :not_found} -> "initial value"
+  {:ok, old_value} -> old_value <> "new value"
+end)
+```
 
 ### Locking
 
@@ -130,9 +142,11 @@ time. Write a key in Memcache to get a lock, then do the thing, then delete
 the key to remove the lock. Using an `add` command ensures that you only get
 the lock if no one else has it.
 
-    Memcache.StateMachine.with_lock(memcache, cache_key, fn ->
-      function_that_only_one_process_should_call_at_a_time()
-    end)
+```elixir
+Memcache.StateMachine.with_lock(memcache, cache_key, fn ->
+  function_that_only_one_process_should_call_at_a_time()
+end)
+```
 
 ## Server Implementation
 
@@ -140,7 +154,9 @@ A native Elixir Memcached server implementation is included, so that you can
 run your application's unit tests without installing and starting a separate
 Memcached process.
 
-    {:ok, server} = Memcache.Server.start_link(port: 11212)
+```elixir
+{:ok, server} = Memcache.Server.start_link(port: 11212)
+```
 
 ## Installation
 
